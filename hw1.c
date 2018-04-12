@@ -196,11 +196,12 @@ int main() {
                 if(shmaddr[9] == 0){    // Clock output
                     //printf("Im here!!!!!!!!!!!!1\n");
 
-                    /* led initialize */
+                    /*
                     led_data = atoi("128");
 
                     *led_addr = led_data;   //write led
                     led_data = *led_addr;
+                    */
 
                     retval = write(fnd_dev, &fnd_data, 4);
                     // device file <- data address write
@@ -214,7 +215,7 @@ int main() {
                         fnd_data[1] = shmaddr[12];
                         fnd_data[2] = shmaddr[13];
                         fnd_data[3] = shmaddr[14];
-                        
+                        *led_addr = shmaddr[15];
                         //printf("%d %d %d %d\n", shmaddr[11], shmaddr[12], shmaddr[13], shmaddr[14]);
 
                         retval = write(fnd_dev, &fnd_data, 4);
@@ -252,10 +253,40 @@ int main() {
             while(1){
                 //printf("main\n");
                 if(shmaddr[9] == 0){    // Clock
+                    int flag=0;
+                    while(1){
+                        if(flag == 0){  // clock initialize
+                            time(&current_time);
+                            total_time = current_time % 86400;
+                            current_hour = total_time / 3600;
+                            current_min = (total_time % 3600)/60;
+                            //printf("current_time=%ld, total_time=%ld, hour=%ld, min=%ld\n", current_time, total_time, current_hour, current_min);
+                            shmaddr[11] = current_hour / 10;
+                            shmaddr[12] = current_hour % 10;
+                            shmaddr[13] = current_min / 10;
+                            shmaddr[14] = current_min % 10;
+                            
+                        }
+                        else{
+                            if(shmaddr[0] == 1){    // if press SW(1)
+                                
+                            }
+                            else if(shmaddr[1] == 1){   // if press SW(2)
+
+                            }
+                            else if(shmaddr[2] == 1){   // if press SW(3)
+
+                            }
+                            else if(shmaddr[3] == 1){   // if press SW(4)
+
+                            }
+                        }
+                    }
                     time(&current_time);
                     //printf("%ld\n", current_time);
                     //printf(ctime(&current_time));
                     
+                    /*
                     total_time = current_time % 86400;
                     current_hour = total_time / 3600;
                     current_min = (total_time % 3600)/60;
@@ -264,6 +295,9 @@ int main() {
                     shmaddr[12] = current_hour % 10;
                     shmaddr[13] = current_min / 10;
                     shmaddr[14] = current_min % 10;
+                    */
+
+
                 }
             }
         }
