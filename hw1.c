@@ -31,9 +31,10 @@ int main() {
     int shmid;
     int* shmaddr;
     key_t key;
-
+    
+    struct tm *present_time;
     time_t current_time;
-    time_t total_time, current_hour, current_min;
+    time_t total_time=0, current_hour=0, current_min=0;
 
     key = 1530;
     shmid = shmget(key, 1024, IPC_CREAT|0666);
@@ -61,7 +62,9 @@ int main() {
         int dev;
         int buff_size;
         unsigned char push_sw_buff[MAX_BUTTON];
+        unsigned char prev_push_sw_buff[MAX_BUTTON];
 
+        
         int mode_num=0;
 
         char* device = "/dev/input/event0";
@@ -81,11 +84,32 @@ int main() {
         buff_size = sizeof(push_sw_buff);
 
         while(1){
+            memcpy(prev_push_sw_buff, push_sw_buff, buff_size);
             read(dev, &push_sw_buff, buff_size);
-            for(i=0; i<MAX_BUTTON; i++){
-                shmaddr[i] = push_sw_buff[i];
-                //printf("[%d] ",push_sw_buff[i]);
+
+            /*  4/13 23:28 add  */
+            if(memcmp(prev_push_sw_buff, push_sw_buff, buff_size) == -1){
+                for(i=0; i<MAX_BUTTON; i++){
+                //if(memcmp(prev_push_sw_buff, push_sw_buff, buff_size) == -1){
+                    shmaddr[i] = push_sw_buff[i];
+                    //printf("[%d] ",push_sw_buff[i]);
+                //}
+                }
+                printf("\n");
+                printf("prev array is ");
+                for(i=0; i<9; i++)
+                    printf("[%d] ", prev_push_sw_buff[i]);
+                printf("\n");
+                printf("push array is ");
+                for(i=0; i<MAX_BUTTON; i++)
+                    printf("[%d] ", push_sw_buff[i]);
+                printf("\n");
             }
+            else{
+                for(i=0; i<9; i++)
+                    shmaddr[i] = 0;
+            }
+           
             // if press -> shmaddr[i]=1
             //    release -> shmaddr[i]=0
             /*
@@ -150,7 +174,7 @@ int main() {
         else if(output_pid == 0){  
 
             /******************************************************/
-            /************* this area is output process ************/
+            /****************** output process ********************/
             /******************************************************/
 
             //printf("output enter!!!!!!!\n");
@@ -246,43 +270,247 @@ int main() {
         }
         else{   
             /*****************************************************/
-            /************* this area is main process *************/
+            /******************* main process ********************/
             /*****************************************************/
 
             shmaddr = shmat(shmid, (void *)0, 0);
             while(1){
                 //printf("main\n");
+                shmaddr[16]=0;
                 if(shmaddr[9] == 0){    // Clock
                     int flag=0;
+                    int change_flag=0, clock_init_flag=0;
+                    int i;
+                    int sw3_count=0;
+                    int led_count=0;
                     while(1){
                         if(flag == 0){  // clock initialize
+                            //printf("Clock initialize enter!!!!!!!!!!\n");
                             time(&current_time);
+                            
+                            /*  4/14 1:50   */
+                            present_time = localtime(&current_time);
+                            shmaddr[11] = present_time->tm_hour / 10;
+                            shmaddr[12] = present_time->tm_hour % 10;
+                            shmaddr[13] = present_time->tm_min / 10;
+                            shmaddr[14] = present_time->tm_min % 10;
+
+                            //printf("%d%d %d%d\n", shmaddr[11], shmaddr[12], shmaddr[13], shmaddr[14]);
+                            //printf("%d %d\n", present_time->tm_hour, present_time->tm_min);
+                            /*
+                            while(current_time >= 86400)
+                                current_time -= 43200;
+                            */
+                            //printf("current_time is %ld\n", current_time);
+                            /*
                             total_time = current_time % 86400;
+                            total_time = current_time;
                             current_hour = total_time / 3600;
                             current_min = (total_time % 3600)/60;
-                            //printf("current_time=%ld, total_time=%ld, hour=%ld, min=%ld\n", current_time, total_time, current_hour, current_min);
+                            printf("current_time=%ld, total_time=%ld, hour=%ld, min=%ld\n", current_time, total_time, current_hour, current_min);
                             shmaddr[11] = current_hour / 10;
                             shmaddr[12] = current_hour % 10;
                             shmaddr[13] = current_min / 10;
                             shmaddr[14] = current_min % 10;
+                            */
+                            if(clock_init_flag == 0)
+                                shmaddr[15] = 128;
+                            else if(clock_init_flag == 1){
+                                if(difftime(time(NULL), current_time) >= 1){
+                                    current_time = time(NULL);
+                                    if(led_count%2 == 0){
+                                        shmaddr[15] = 16;
+                                    }
+                                    else if(led_count %2 == 1){
+                                        shmaddr[15] = 32;
+                                    }
+                                    led_count++;
+                                }
+                            }
                             
                         }
                         else{
+                            //printf("After Clock initialize!!!!!!!!!!!!\n");
+                            //for(i=0; i<9; i++)
+                            //    printf("[%d] ", shmaddr[i]);
+                            //printf("\n");
+                            //printf("change_flag is %d\n", change_flag);
                             if(shmaddr[0] == 1){    // if press SW(1)
-                                
+                                if(change_flag == 0){   // change start
+                                    change_flag = 1;
+                                    clock_init_flag = 1;
+                                }
+                                else if(change_flag == 1){  // change end
+                                    change_flag = 0;
+                                    led_count=0;
+                                    shmaddr[15] = 128;
+                                }
+                                //printf("change_flag is %d\n", change_flag);
                             }
-                            else if(shmaddr[1] == 1){   // if press SW(2)
+                            else if(change_flag == 0){
+                                //current_time = time(NULL);
+                                //printf("%f\n", difftime(current_time, time(NULL)));
+                                if(difftime(time(NULL), current_time) >= 5){
+                                    current_time = time(NULL);
+                                    if(shmaddr[14]+1 > 9){
+                                        if(shmaddr[13]+1 > 5){
+                                            if(shmaddr[11] == 2){
+                                                if(shmaddr[12]+1 == 4){
+                                                    shmaddr[11]=0;
+                                                    shmaddr[12]=0;
+                                                }
+                                                else
+                                                    shmaddr[12]+=1;
+                                            }
+                                            else{
+                                                if(shmaddr[12]+1 > 9){
+                                                    shmaddr[11]+=1;
+                                                    shmaddr[12] =0;
+                                                }
+                                                else{
+                                                    shmaddr[12] +=1;
+                                                    shmaddr[13] = 0;
+                                                    shmaddr[14] = 0;
+                                                }
+                                            }
+                                        }
+                                        else{
+                                            shmaddr[13]+=1;
+                                            shmaddr[14]=0;
+                                        }
+                                    }
+                                    else{
+                                        //shmaddr[13]+=1;
+                                        shmaddr[14]+=1;
+                                    }
+                                }
+                            }
+                            else if(shmaddr[1] == 1 && change_flag == 1){   // if press SW(2)
+                                flag=0;
+                                usleep(100000);
+                                time(&current_time);
+                                /*  4/14 1:59   */
+                                present_time = localtime(&current_time);
+                                shmaddr[11] = present_time->tm_hour / 10;
+                                shmaddr[12] = present_time->tm_hour % 10;
+                                shmaddr[13] = present_time->tm_min / 10;
+                                shmaddr[14] = present_time->tm_min % 10;
+                                /*
+                                while(current_time >= 86400)
+                                    current_time -= 43200;
+                                current_hour /= 3600;
+                                current_min = (current_time%3600)/60;
+                                shmaddr[11] = current_hour / 10;
+                                shmaddr[12] = current_hour % 10;
+                                shmaddr[13] = current_min / 10;
+                                shmaddr[14] = current_min % 10;
+                                */
+                            }
+                            else if(shmaddr[2] == 1 && change_flag == 1){   // if press SW(3)
+                                usleep(100000);
+                                if(sw3_count != 0)
+                                    break;
+                                else{
 
+                                    if(shmaddr[11]==2){
+                                        if(shmaddr[12]+1 == 4){
+                                            shmaddr[11]=0;
+                                            shmaddr[12]=0;
+                                        }
+                                        else
+                                            shmaddr[12] += 1;
+                                    }
+                                    else{
+                                        if(shmaddr[12]+1 > 9){
+                                            shmaddr[11] += 1;
+                                            shmaddr[12] = 0;
+                                        }
+                                        else
+                                            shmaddr[12] += 1;
+                                    }
+                                    sw3_count++;
+                                }
+                                /*  4/13, 23:06
+                                if(shmaddr[2] != shmaddr[16]){
+                                    shmaddr[16] = shmaddr[2];
+                                    if(shmaddr[11]==2){
+                                        if(shmaddr[12]+1 > 4){
+                                            shmaddr[11]=0;
+                                            shmaddr[12]=0;
+                                        }
+                                        else
+                                            shmaddr[12] += 1;
+                                    }
+                                    else{
+                                        if(shmaddr[12]+1 > 9){
+                                            shmaddr[11] += 1;
+                                            shmaddr[12] = 0;
+                                        }
+                                        else
+                                            shmaddr[12] = shmaddr[12]+1;
+                                    }
+                                }
+                                */
                             }
-                            else if(shmaddr[2] == 1){   // if press SW(3)
-
+                            else if(shmaddr[3] == 1){                       // if press SW(4)
+                                usleep(100000);
+                                if(shmaddr[14]+1 > 9){
+                                    if(shmaddr[13]+1 != 6){     
+                                        shmaddr[13] += 1;
+                                        shmaddr[14] = 0;
+                                    }
+                                    else{
+                                        shmaddr[13] = 0;
+                                        shmaddr[14] = 0;
+                                        if(shmaddr[11] == 2){
+                                            if(shmaddr[12]+1 == 4){
+                                                shmaddr[11]=0;
+                                                shmaddr[12]=0;
+                                            }
+                                            else
+                                                shmaddr[12] += 1;
+                                        }
+                                        else{
+                                            if(shmaddr[12]+1 > 9){
+                                                shmaddr[11] += 1;
+                                                shmaddr[12] = 0;
+                                            }
+                                            else
+                                                shmaddr[12] += 1;
+                                        }
+                                    }
+                                }
+                                else
+                                    shmaddr[14] += 1;
+     
                             }
-                            else if(shmaddr[3] == 1){   // if press SW(4)
-
+                            if(change_flag == 1){
+                                if(led_count == 0){
+                                    shmaddr[15] = 48;
+                                    //usleep(100000);
+                                }
+                                else if(led_count %2 == 0){
+                                    if(difftime(time(NULL), current_time) >= 1){
+                                        current_time=time(NULL);
+                                        shmaddr[15] = 32;
+                                        //usleep(100000);
+                                    }
+                                }
+                                else if(led_count %2 == 1){
+                                    if(difftime(time(NULL), current_time) >= 1){
+                                        current_time=time(NULL);
+                                        shmaddr[15] = 16;
+                                        //usleep(100000);
+                                    }
+                                }
+                                led_count++;
                             }
+                            shmaddr[16]=0;
+                            sw3_count=0;
                         }
+                        flag++;
                     }
-                    time(&current_time);
+                    //time(&current_time);
                     //printf("%ld\n", current_time);
                     //printf(ctime(&current_time));
                     
@@ -296,8 +524,6 @@ int main() {
                     shmaddr[13] = current_min / 10;
                     shmaddr[14] = current_min % 10;
                     */
-
-
                 }
             }
         }
